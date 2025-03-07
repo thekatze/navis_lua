@@ -48,7 +48,7 @@ struct ShipSimulationScene : public IScene {
         m_space = cpSpaceNew();
         cpSpaceSetGravity(m_space, cpVect{.x = 0.0, .y = 100.0});
 
-        api.on_file_dropped = [this, &api](const char *file_path) {
+        api.on_file_dropped = [this, &api](const char *file_path, f32 x, f32 y) {
             auto script =
                 m_lua.script_file(file_path, [](lua_State *, sol::protected_function_result pfr) {
                     std::cerr << "Invalid lua file dropped" << std::endl;
@@ -78,6 +78,7 @@ struct ShipSimulationScene : public IScene {
             auto moment = cpMomentForCircle(mass, 0, 5, cpvzero);
 
             cpBody *body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment));
+            cpBodySetPosition(body, cpVect{.x = x, .y = y});
 
             auto ship_id = m_world.spawn(
                 RigidBody{
@@ -91,11 +92,11 @@ struct ShipSimulationScene : public IScene {
             };
         };
 
-        api.on_file_dropped("/Users/thekatze/Development/me-when-lua/assets/scripting/script.lua");
+        api.on_file_dropped("/Users/thekatze/Development/me-when-lua/assets/scripting/script.lua",
+                            0.0f, 0.0f);
     }
 
     void update(EngineApi &api) override {
-
         m_world.query<RigidBody &, ShipMarker &>(
             [this](EntityId id, RigidBody &body, ShipMarker &_) {
                 auto &ship = m_ships[id];

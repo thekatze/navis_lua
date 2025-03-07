@@ -37,7 +37,7 @@ struct Game {
             if (event.type == SDL_EVENT_DROP_FILE) {
                 // TODO: event
                 if (m_api.on_file_dropped) {
-                    m_api.on_file_dropped(event.drop.data);
+                    m_api.on_file_dropped(event.drop.data, event.drop.x, event.drop.y);
                 }
             }
         }

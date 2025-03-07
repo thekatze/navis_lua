@@ -15,6 +15,7 @@ clean:
     -rm -rf build/
 
 run: build
+    open ./assets/scripting/
     ./build/me-when-lua
 
 release: clean

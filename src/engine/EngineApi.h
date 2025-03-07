@@ -26,7 +26,7 @@ struct EngineApi {
 
     SceneStack scenes;
 
-    std::function<void(const char* file_path)> on_file_dropped;
+    std::function<void(const char* file_path, f32 x, f32 y)> on_file_dropped;
 
     Time time;
 };
