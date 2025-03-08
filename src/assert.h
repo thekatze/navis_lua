@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 #ifdef _MSC_VER
 #include <intrin.h>
 #define debug_break() __debugbreak()

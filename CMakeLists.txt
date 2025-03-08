@@ -18,6 +18,7 @@ find_package(SDL3_image CONFIG REQUIRED)
 add_executable(me-when-lua 
     src/engine/IScene.cpp
     src/engine/SceneStack.cpp
+    src/engine/AssetManager.cpp
     src/main.cpp
 )
 

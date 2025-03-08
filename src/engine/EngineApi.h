@@ -1,7 +1,8 @@
 #pragma once
 
-#include "defines.h"
 #include "SceneStack.h"
+#include "defines.h"
+#include "engine/AssetManager.h"
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_render.h>
@@ -12,7 +13,8 @@ struct Time {
 };
 
 struct EngineApi {
-    EngineApi(i32 window_width, i32 window_height, const char *title) : scenes(*this) {
+    EngineApi(i32 window_width, i32 window_height, const char *title)
+        : assets(*this), scenes(*this) {
         SDL_Init(SDL_INIT_VIDEO);
         SDL_CreateWindowAndRenderer(title, window_width, window_height, 0, &window, &renderer);
 
@@ -24,10 +26,10 @@ struct EngineApi {
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
 
+    AssetManager assets;
     SceneStack scenes;
 
-    std::function<void(const char* file_path, f32 x, f32 y)> on_file_dropped;
+    std::function<void(const char *file_path, f32 x, f32 y)> on_file_dropped;
 
     Time time;
 };
-

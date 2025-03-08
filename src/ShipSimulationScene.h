@@ -26,6 +26,10 @@ struct RigidBody {
     f32 rotation() const { return cpBodyGetAngle(body); }
 };
 
+struct Sprite {
+    AssetHandle handle;
+};
+
 struct ShipMarker {};
 
 struct ShipScript {
@@ -46,9 +50,9 @@ struct ShipSimulationScene : public IScene {
         m_world = World{};
 
         m_space = cpSpaceNew();
-        cpSpaceSetGravity(m_space, cpVect{.x = 0.0, .y = 100.0});
 
-        api.on_file_dropped = [this, &api](const char *file_path, f32 x, f32 y) {
+        auto ship_texture = api.assets.textures.load("./assets/gameplay/ship_block.bmp");
+        api.on_file_dropped = [this, &api, ship_texture](const char *file_path, f32 x, f32 y) {
             auto script =
                 m_lua.script_file(file_path, [](lua_State *, sol::protected_function_result pfr) {
                     std::cerr << "Invalid lua file dropped" << std::endl;
@@ -84,6 +88,9 @@ struct ShipSimulationScene : public IScene {
                 RigidBody{
                     .body = body,
                 },
+                Sprite{
+                    .handle = ship_texture,
+                },
                 ShipMarker{});
 
             m_ships[ship_id] = ShipScript{
@@ -113,17 +120,24 @@ struct ShipSimulationScene : public IScene {
     }
 
     void render(EngineApi &api) override {
-        SDL_SetRenderDrawColor(api.renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-        m_world.query<const RigidBody &>([&api](EntityId id, const RigidBody &body) {
-            auto pos = body.position();
-            SDL_FRect rect{
-                .x = static_cast<f32>(pos.x),
-                .y = static_cast<f32>(pos.y),
-                .w = 10,
-                .h = 10,
-            };
+        m_world.query<const RigidBody &, const Sprite &>(
+            [&api](EntityId id, const RigidBody &body, const Sprite &sprite) {
+                auto texture = api.assets.textures.get(sprite.handle);
+                auto pos = body.position();
+                f32 w, h;
+                SDL_GetTextureSize(texture, &w, &h);
 
-            SDL_RenderFillRect(api.renderer, &rect);
-        });
+                SDL_FRect dest{
+                    .x = static_cast<f32>(pos.x),
+                    .y = static_cast<f32>(pos.y),
+                    .w = w,
+                    .h = h,
+                };
+
+                SDL_FPoint center{.x = w / 2, .y = h / 2};
+
+                SDL_RenderTextureRotated(api.renderer, texture, NULL, &dest, body.rotation(),
+                                         &center, SDL_FLIP_NONE);
+            });
     }
 };
