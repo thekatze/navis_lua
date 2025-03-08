@@ -82,13 +82,29 @@ struct ShipSimulationScene : public IScene {
             auto mass = 1.0f;
             auto moment = cpMomentForBox(mass, 32, 32);
 
-            cpBody *body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment));
-            cpBodySetPosition(body, cpVect{.x = x, .y = y});
-            cpSpaceAddShape(m_space, cpBoxShapeNew(body, 32, 32, 0));
+            cpBody *hub = cpSpaceAddBody(m_space, cpBodyNew(mass, moment));
+            cpBodySetPosition(hub, cpVect{.x = x, .y = y});
+            cpSpaceAddShape(m_space, cpBoxShapeNew(hub, 32, 32, 0));
+
+            cpBody *attached_body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment));
+            cpBodySetPosition(attached_body, cpVect{.x = x - 32, .y = y});
+            cpSpaceAddShape(m_space, cpBoxShapeNew(attached_body, 32, 32, 0));
+
+            cpSpaceAddConstraint(m_space,
+                                 cpDampedSpringNew(hub, attached_body, cpVect{.x = -16, .y = 0},
+                                                   cpVect{.x = 16, .y = 0}, 0, 1000, 10));
+
+            m_world.spawn(
+                RigidBody{
+                    .body = attached_body,
+                },
+                Sprite{
+                    .handle = ship_texture,
+                });
 
             auto ship_id = m_world.spawn(
                 RigidBody{
-                    .body = body,
+                    .body = hub,
                 },
                 Sprite{
                     .handle = ship_texture,
@@ -102,7 +118,7 @@ struct ShipSimulationScene : public IScene {
         };
 
         api.on_file_dropped("/Users/thekatze/Development/me-when-lua/assets/scripting/script.lua",
-                            0.0f, 0.0f);
+                            64.0f, 64.0f);
     }
 
     void update(EngineApi &api) override {
