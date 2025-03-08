@@ -21,25 +21,25 @@ return {
         local x, y = ship_position()
         local dx, dy = ship_velocity()
 
-        print("Ship angle:", ship_angle)
-        print("Ship pos:", x, y)
-        print("Ship vel:", dx, dy)
+        -- print("Ship angle:", ship_angle)
+        -- print("Ship pos:", x, y)
+        -- print("Ship vel:", dx, dy)
 
         local radar_angle = radar_angle(radar)
-        print("Radar angle:", radar_angle)
+        -- print("Radar angle:", radar_angle)
         radar_rotate(radar, -50.0)
 
-        -- distance = radar_ping(radar)
-        -- if (distance > 0) then
-        --     print("i see something")
-        -- end
+        distance = radar_ping(radar)
+        if (distance > 0) then
+            print("i see something:", distance)
+        end
 
         local gun_angle = gun_angle(gun)
-        print("Gun angle:", gun_angle)
+        -- print("Gun angle:", gun_angle)
         gun_rotate(gun, -100.0)
         -- gun_shoot(gun)
 
-        thruster_set(left_thruster, 100)
-        thruster_set(right_thruster, 100)
+        thruster_set(left_thruster, 0)
+        thruster_set(right_thruster, 0)
     end,
 }

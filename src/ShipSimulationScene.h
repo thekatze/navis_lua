@@ -353,6 +353,31 @@ struct ShipSimulationScene : public IScene {
                 gun.rotated = true;
             });
 
+            m_lua.set_function("radar_ping", [this, &body, &ship_id](usize radar_id) {
+                auto components =
+                    m_world.get<const ShipId &, const RigidBody &, const ShipRadar &>(radar_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid radar id\n";
+                    return -1.0f;
+                }
+
+                auto &radar_body = std::get<const RigidBody &>(*components);
+                auto &radar = std::get<const ShipRadar &>(*components);
+
+                auto total_rotation = body.rotation() + radar.rotation;
+                auto origin = radar_body.position();
+                auto target = origin + cpvmult(cpvforangle(total_rotation), 2000);
+
+                cpSegmentQueryInfo result;
+                if (!cpSpaceSegmentQueryFirst(m_space, origin, target, 10.0f,
+                                              cpShapeFilterNew(ship_id, 0xFFFFFFFF, 0xFFFFFFFF),
+                                              &result)) {
+                    return 0.0f;
+                }
+
+                return static_cast<f32>(cpvlength(cpvsub(result.point, origin)));
+            });
+
             m_lua.set_function("thruster_set", [this, &ship_id](usize thruster_id, f32 percentage) {
                 auto components =
                     m_world.get<const ShipId &, const RigidBody &, const ShipThruster &>(
