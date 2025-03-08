@@ -58,6 +58,9 @@ struct ShipId {
 };
 
 struct ShipBrain {};
+struct ShipThruster {
+    f64 max_thrust;
+};
 
 struct ShipScript {
     std::string name;
@@ -77,6 +80,7 @@ struct ShipSimulationScene : public IScene {
         m_lua.open_libraries(sol::lib::base);
         m_lua["BLOCK_HUB"] = BlockType::Hub;
         m_lua["BLOCK_HULL"] = BlockType::Hull;
+        m_lua["BLOCK_THRUSTER"] = BlockType::Thruster;
 
         m_world = World{};
 
@@ -84,9 +88,11 @@ struct ShipSimulationScene : public IScene {
 
         auto ship_hub_texture = api.assets.textures.load("./assets/gameplay/ship_block_hub.bmp");
         auto ship_hull_texture = api.assets.textures.load("./assets/gameplay/ship_block_hull.bmp");
+        auto ship_thruster_texture =
+            api.assets.textures.load("./assets/gameplay/ship_block_thruster.bmp");
 
-        api.on_file_dropped = [&, this, ship_hub_texture, ship_hull_texture](const char *file_path,
-                                                                             f32 cx, f32 cy) {
+        api.on_file_dropped = [&, this, ship_hub_texture, ship_hull_texture,
+                               ship_thruster_texture](const char *file_path, f32 cx, f32 cy) {
             auto script =
                 m_lua.script_file(file_path, [](lua_State *, sol::protected_function_result pfr) {
                     std::cerr << "Invalid lua file dropped" << std::endl;
@@ -124,8 +130,11 @@ struct ShipSimulationScene : public IScene {
             ShipScript *ship = nullptr;
 
             m_lua.set_function("place", [&](BlockType type, int dx, int dy) {
-                cpVect relative_pos{.x = dx * 32.0, .y = dy * 32.0};
+                EntityId block_id = 0;
+
                 auto dimensions = get_block_dimensions(type);
+                cpVect relative_pos{.x = dx * 32.0 + (32.0 - dimensions.x) / 2.0,
+                                    .y = dy * 32.0 + (32.0 - dimensions.y) / 2.0};
 
                 auto mass = 1.0f;
                 auto moment = cpMomentForBox(mass, dimensions.x, dimensions.y);
@@ -156,11 +165,11 @@ struct ShipSimulationScene : public IScene {
                 switch (type) {
                 case BlockType::Hub: {
                     always_assert(ship_id == 0, "only one hub per ship allowed");
-                    ship_id = m_world.spawn(block,
-                                            Sprite{
-                                                .handle = ship_hub_texture,
-                                            },
-                                            ShipId{.id = 0}, ShipBrain{});
+                    block_id = ship_id = m_world.spawn(block,
+                                                       Sprite{
+                                                           .handle = ship_hub_texture,
+                                                       },
+                                                       ShipId{.id = 0}, ShipBrain{});
 
                     // need to first spawn to be able to set the ship id
                     std::get<ShipId &>(*m_world.get<ShipId &>(ship_id)).id = ship_id;
@@ -174,20 +183,32 @@ struct ShipSimulationScene : public IScene {
                     ship = &m_ships[ship_id];
                     break;
                 }
+                case BlockType::Thruster: {
+                    always_assert(ship_id != 0 && ship != nullptr, "hub must be placed first");
+                    block_id = m_world.spawn(block, ShipId{.id = ship_id},
+                                             ShipThruster{.max_thrust = 50.0},
+                                             Sprite{
+                                                 .handle = ship_thruster_texture,
+                                             });
+
+                    break;
+                }
                 case BlockType::Hull:
-                case BlockType::Thruster:
                 case BlockType::Radar:
                 case BlockType::Gun: {
                     always_assert(ship_id != 0 && ship != nullptr, "hub must be placed first");
-                    m_world.spawn(block, ShipId{.id = ship_id},
-                                  Sprite{
-                                      .handle = ship_hull_texture,
-                                  });
+                    block_id = m_world.spawn(block, ShipId{.id = ship_id},
+                                             Sprite{
+                                                 .handle = ship_hull_texture,
+                                             });
                     break;
                 }
                 }
 
                 ship->parts.push_back(block);
+
+                debug_assert(block_id != 0, "block_id must be set");
+                return block_id;
             });
 
             construct();
@@ -199,12 +220,25 @@ struct ShipSimulationScene : public IScene {
     }
 
     void update(EngineApi &api) override {
-        m_world.query<RigidBody &, ShipBrain &>([this](EntityId id, RigidBody &body, ShipBrain &_) {
-            auto &ship = m_ships[id];
-            m_lua.set_function("set_thruster", [&body](usize id, f32 percentage) {
+        m_world.query<RigidBody &, ShipBrain &>([this](EntityId ship_id, RigidBody &body,
+                                                       ShipBrain &_) {
+            auto &ship = m_ships[ship_id];
+            m_lua.set_function("set_thruster", [this, &ship_id](usize thruster_id, f32 percentage) {
+                auto components =
+                    m_world.get<const ShipId &, const RigidBody &, const ShipThruster &>(
+                        thruster_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid thruster id";
+                    return;
+                }
+
+                auto &rigid_body = std::get<const RigidBody &>(*components);
+                auto &thruster = std::get<const ShipThruster &>(*components);
+
                 auto thrust = std::clamp(percentage, 0.0f, 100.0f);
-                auto dir = body.direction();
-                cpBodyApplyForceAtLocalPoint(body.body, cpvmult(dir, thrust), cpvzero);
+                auto dir = rigid_body.direction();
+                cpBodyApplyForceAtLocalPoint(rigid_body.body,
+                                             cpvmult(dir, thrust * thruster.max_thrust), cpvzero);
             });
 
             ship.update();
