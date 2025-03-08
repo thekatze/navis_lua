@@ -52,7 +52,7 @@ struct ShipSimulationScene : public IScene {
 
         m_space = cpSpaceNew();
 
-        auto ship_texture = api.assets.textures.load("./assets/gameplay/ship_block.bmp");
+        auto ship_texture = api.assets.textures.load("./assets/gameplay/ship_block_hull.bmp");
         api.on_file_dropped = [this, &api, ship_texture](const char *file_path, f32 x, f32 y) {
             auto script =
                 m_lua.script_file(file_path, [](lua_State *, sol::protected_function_result pfr) {
