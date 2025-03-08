@@ -10,6 +10,7 @@
 
 struct Time {
     f32 delta_time;
+    f32 elapsed;
 };
 
 struct EngineApi {
@@ -20,6 +21,7 @@ struct EngineApi {
 
         time = {
             .delta_time = 1.0f / 120.0f,
+            .elapsed = 0.0f,
         };
     }
 

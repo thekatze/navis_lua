@@ -3,6 +3,7 @@
 #include "EngineApi.h"
 
 #include <SDL3/SDL_timer.h>
+#include <ctime>
 
 struct Game {
     i32 m_window_width, m_window_height;
@@ -65,6 +66,7 @@ struct Game {
             while (tick < target_tick) {
                 update();
                 tick += 1;
+                m_api.time.elapsed += m_api.time.delta_time;
             }
 
             render();

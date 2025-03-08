@@ -30,14 +30,15 @@ return {
         radar_rotate(radar, -50.0)
 
         distance = radar_ping(radar)
-        if (distance > 0) then
-            print("i see something:", distance)
-        end
 
         local gun_angle = gun_angle(gun)
         -- print("Gun angle:", gun_angle)
         gun_rotate(gun, -100.0)
-        -- gun_shoot(gun)
+        if (distance > 0) then
+            if (gun_cooled_down(gun)) then
+                gun_shoot(gun)
+            end
+        end
 
         thruster_set(left_thruster, 0)
         thruster_set(right_thruster, 0)

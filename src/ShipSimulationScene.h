@@ -72,10 +72,16 @@ struct ShipRadar {
     bool rotated = false;
 };
 
+struct Lifetime {
+    f32 until;
+};
+
 struct ShipGun {
     AssetHandle gun_handle;
     f32 rotation;
     f32 rotation_speed;
+    f32 cooldown;
+    f32 last_shot;
     bool rotated = false;
 };
 
@@ -85,10 +91,14 @@ struct ShipScript {
     sol::protected_function update;
 };
 
+struct Projectile {};
+
 struct ShipSimulationScene : public IScene {
     World m_world;
 
     cpSpace *m_space;
+
+    AssetHandle m_gun_shot_texture;
 
     std::unordered_map<EntityId, ShipScript> m_ships;
     sol::state m_lua;
@@ -102,8 +112,9 @@ struct ShipSimulationScene : public IScene {
         m_lua["BLOCK_GUN"] = BlockType::Gun;
 
         m_world = World{};
-
         m_space = cpSpaceNew();
+
+        m_gun_shot_texture = api.assets.textures.load("./assets/gameplay/gun_shot.bmp");
 
         auto ship_hub_texture = api.assets.textures.load("./assets/gameplay/ship_block_hub.bmp");
         auto ship_hull_texture = api.assets.textures.load("./assets/gameplay/ship_block_hull.bmp");
@@ -245,6 +256,8 @@ struct ShipSimulationScene : public IScene {
                                                  .gun_handle = ship_gun_gun_texture,
                                                  .rotation = 0,
                                                  .rotation_speed = 3.0f * api.time.delta_time,
+                                                 .cooldown = 0.8f,
+                                                 .last_shot = api.time.elapsed,
                                              },
                                              Sprite{
                                                  .handle = ship_gun_base_texture,
@@ -278,10 +291,16 @@ struct ShipSimulationScene : public IScene {
     }
 
     void update(EngineApi &api) override {
-        m_world.query<RigidBody &, ShipBrain &>([this](EntityId ship_id, RigidBody &body,
-                                                       ShipBrain &_) {
+        auto ships_count = m_world.query_count<ShipBrain>();
+
+        std::vector<std::tuple<EntityId, cpVect, f32>> shots_to_spawn{};
+
+        m_world.query<RigidBody &, ShipBrain &>([this, &api, ships_count,
+                                                 &shots_to_spawn](EntityId ship_id, RigidBody &body,
+                                                                  ShipBrain &_) {
             auto &ship = m_ships[ship_id];
 
+            m_lua.set_function("ships_count", [ships_count]() { return ships_count; });
             m_lua.set_function("ship_angle", [body]() { return body.rotation(); });
             m_lua.set_function("ship_position", [body]() {
                 auto pos = body.position();
@@ -353,7 +372,7 @@ struct ShipSimulationScene : public IScene {
                 gun.rotated = true;
             });
 
-            m_lua.set_function("radar_ping", [this, &body, &ship_id](usize radar_id) {
+            m_lua.set_function("radar_ping", [this, &body, &ship_id, &api](usize radar_id) {
                 auto components =
                     m_world.get<const ShipId &, const RigidBody &, const ShipRadar &>(radar_id);
                 if (!components || std::get<const ShipId &>(*components).id != ship_id) {
@@ -376,6 +395,39 @@ struct ShipSimulationScene : public IScene {
                 }
 
                 return static_cast<f32>(cpvlength(cpvsub(result.point, origin)));
+            });
+
+            m_lua.set_function("gun_cooled_down", [this, &ship_id, &api](usize gun_id) {
+                auto components = m_world.get<const ShipId &, const ShipGun &>(gun_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid gun id\n";
+                    return false;
+                }
+
+                auto &gun = std::get<const ShipGun &>(*components);
+                return !(gun.last_shot + gun.cooldown >= api.time.elapsed);
+            });
+
+            m_lua.set_function("gun_shoot", [this, &ship_id, &api, &shots_to_spawn](usize gun_id) {
+                auto components = m_world.get<const ShipId &, const RigidBody &, ShipGun &>(gun_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid gun id\n";
+                    return;
+                }
+
+                auto &gun_body = std::get<const RigidBody &>(*components);
+                auto &gun = std::get<ShipGun &>(*components);
+
+                if (gun.last_shot + gun.cooldown >= api.time.elapsed) {
+                    std::cerr << "tried shooting while on cooldown\n";
+                    return;
+                }
+
+                gun.last_shot = api.time.elapsed;
+
+                auto total_rotation = gun_body.rotation() + gun.rotation;
+
+                shots_to_spawn.emplace_back(ship_id, gun_body.position(), total_rotation);
             });
 
             m_lua.set_function("thruster_set", [this, &ship_id](usize thruster_id, f32 percentage) {
@@ -403,8 +455,53 @@ struct ShipSimulationScene : public IScene {
             }
         });
 
+        auto gun_shot_texture = api.assets.textures.get(m_gun_shot_texture);
+        f32 w, h;
+        SDL_GetTextureSize(gun_shot_texture, &w, &h);
+
+        for (auto &shot : shots_to_spawn) {
+            auto ship_id = std::get<EntityId>(shot);
+            auto origin = std::get<cpVect>(shot);
+            auto angle = std::get<f32>(shot);
+
+            auto mass = 1.0f;
+            auto moment = cpMomentForBox(mass, w, h);
+
+            RigidBody block{.body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment)),
+                            .relative_position = cpvzero};
+            auto shape = cpSpaceAddShape(m_space, cpBoxShapeNew(block.body, w, h, 0));
+            cpShapeSetFilter(shape, cpShapeFilterNew(ship_id, 0xFFFFFFFF, 0xFFFFFFFF));
+
+            cpBodySetPosition(block.body, origin);
+            cpBodySetAngle(block.body, angle);
+
+            const f32 BULLET_SPEED = 1000.0;
+            cpBodySetVelocity(block.body, cpvforangle(angle) * BULLET_SPEED);
+
+            m_world.spawn(block, Sprite{.handle = m_gun_shot_texture},
+                          Lifetime{.until = api.time.elapsed + 1.0f});
+        }
+
         m_world.query<ShipRadar &>([](EntityId &id, ShipRadar &radar) { radar.rotated = false; });
         m_world.query<ShipGun &>([](EntityId &id, ShipGun &gun) { gun.rotated = false; });
+
+        std::vector<EntityId> to_remove{};
+
+        m_world.query<const Lifetime &>([&api, &to_remove](EntityId id, const Lifetime &lifetime) {
+            if (lifetime.until <= api.time.elapsed) {
+                to_remove.emplace_back(id);
+            }
+        });
+
+        for (auto id : to_remove) {
+            auto rigid_body = m_world.get<RigidBody &>(id);
+            if (rigid_body) {
+                auto body = std::get<RigidBody &>(*rigid_body);
+                cpSpaceRemoveBody(m_space, body.body);
+            }
+
+            m_world.remove<Lifetime>(id);
+        }
 
         cpSpaceStep(m_space, api.time.delta_time);
     }
