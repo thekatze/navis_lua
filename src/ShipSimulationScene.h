@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chipmunk/cpVect.h>
 #include <iostream>
+#include <numbers>
 #include <unordered_map>
 
 #include <SDL3/SDL_rect.h>
@@ -23,7 +24,7 @@ struct RigidBody {
     cpVect velocity() const { return cpBodyGetVelocity(body); }
     cpVect direction() const { return cpBodyGetRotation(body); }
 
-    f32 rotation() const { return cpBodyGetAngle(body); }
+    f32 rotation() const { return cpBodyGetAngle(body) * 180.0 / std::numbers::pi_v<f64>; }
 };
 
 struct Sprite {
@@ -79,10 +80,11 @@ struct ShipSimulationScene : public IScene {
             }
 
             auto mass = 1.0f;
-            auto moment = cpMomentForCircle(mass, 0, 5, cpvzero);
+            auto moment = cpMomentForBox(mass, 32, 32);
 
             cpBody *body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment));
             cpBodySetPosition(body, cpVect{.x = x, .y = y});
+            cpSpaceAddShape(m_space, cpBoxShapeNew(body, 32, 32, 0));
 
             auto ship_id = m_world.spawn(
                 RigidBody{
@@ -128,8 +130,8 @@ struct ShipSimulationScene : public IScene {
                 SDL_GetTextureSize(texture, &w, &h);
 
                 SDL_FRect dest{
-                    .x = static_cast<f32>(pos.x),
-                    .y = static_cast<f32>(pos.y),
+                    .x = static_cast<f32>(pos.x) - w / 2.0f,
+                    .y = static_cast<f32>(pos.y) - h / 2.0f,
                     .w = w,
                     .h = h,
                 };
