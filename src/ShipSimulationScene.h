@@ -18,6 +18,9 @@
 
 #include "ecs.h"
 
+const f64 RAD2DEG = 180.0 / std::numbers::pi_v<f64>;
+const f64 DEG2RAD = std::numbers::pi_v<f64> / 180.0;
+
 struct RigidBody {
     cpBody *body;
     cpVect relative_position;
@@ -26,7 +29,7 @@ struct RigidBody {
     cpVect velocity() const { return cpBodyGetVelocity(body); }
     cpVect direction() const { return cpBodyGetRotation(body); }
 
-    f32 rotation() const { return cpBodyGetAngle(body) * 180.0 / std::numbers::pi_v<f64>; }
+    f32 rotation() const { return cpBodyGetAngle(body); }
 };
 
 enum struct BlockType {
@@ -62,6 +65,20 @@ struct ShipThruster {
     f64 max_thrust;
 };
 
+struct ShipRadar {
+    AssetHandle dish_handle;
+    f32 rotation;
+    f32 rotation_speed;
+    bool rotated = false;
+};
+
+struct ShipGun {
+    AssetHandle gun_handle;
+    f32 rotation;
+    f32 rotation_speed;
+    bool rotated = false;
+};
+
 struct ShipScript {
     std::string name;
     std::vector<RigidBody> parts;
@@ -77,10 +94,12 @@ struct ShipSimulationScene : public IScene {
     sol::state m_lua;
 
     void on_enter(EngineApi &api) override {
-        m_lua.open_libraries(sol::lib::base);
+        m_lua.open_libraries(sol::lib::base, sol::lib::math);
         m_lua["BLOCK_HUB"] = BlockType::Hub;
         m_lua["BLOCK_HULL"] = BlockType::Hull;
         m_lua["BLOCK_THRUSTER"] = BlockType::Thruster;
+        m_lua["BLOCK_RADAR"] = BlockType::Radar;
+        m_lua["BLOCK_GUN"] = BlockType::Gun;
 
         m_world = World{};
 
@@ -90,9 +109,19 @@ struct ShipSimulationScene : public IScene {
         auto ship_hull_texture = api.assets.textures.load("./assets/gameplay/ship_block_hull.bmp");
         auto ship_thruster_texture =
             api.assets.textures.load("./assets/gameplay/ship_block_thruster.bmp");
+        auto ship_radar_base_texture =
+            api.assets.textures.load("./assets/gameplay/ship_block_radar_base.bmp");
+        auto ship_radar_dish_texture =
+            api.assets.textures.load("./assets/gameplay/ship_block_radar_dish.bmp");
+        auto ship_gun_base_texture =
+            api.assets.textures.load("./assets/gameplay/ship_block_gun_base.bmp");
+        auto ship_gun_gun_texture =
+            api.assets.textures.load("./assets/gameplay/ship_block_gun_gun.bmp");
 
         api.on_file_dropped = [&, this, ship_hub_texture, ship_hull_texture,
-                               ship_thruster_texture](const char *file_path, f32 cx, f32 cy) {
+                               ship_radar_base_texture, ship_radar_dish_texture,
+                               ship_thruster_texture, ship_gun_base_texture,
+                               ship_gun_gun_texture](const char *file_path, f32 cx, f32 cy) {
             auto script =
                 m_lua.script_file(file_path, [](lua_State *, sol::protected_function_result pfr) {
                     std::cerr << "Invalid lua file dropped" << std::endl;
@@ -141,7 +170,8 @@ struct ShipSimulationScene : public IScene {
 
                 RigidBody block{.body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment)),
                                 .relative_position = relative_pos};
-                cpSpaceAddShape(m_space, cpBoxShapeNew(block.body, dimensions.x, dimensions.y, 0));
+                auto shape = cpSpaceAddShape(
+                    m_space, cpBoxShapeNew(block.body, dimensions.x, dimensions.y, 0));
 
                 cpBodySetPosition(block.body, cpvadd(center, relative_pos));
                 cpBodySetAngle(block.body, 0);
@@ -158,7 +188,9 @@ struct ShipSimulationScene : public IScene {
                         auto half_diff = cpvmult(diff, 0.5);
                         cpSpaceAddConstraint(m_space,
                                              cpDampedSpringNew(block.body, part.body, half_diff,
-                                                               cpvneg(half_diff), 0, 1000, 10));
+                                                               cpvneg(half_diff), 0, 3000, 10));
+                        cpSpaceAddConstraint(
+                            m_space, cpDampedRotarySpringNew(block.body, part.body, 0, 100000, 10));
                     }
                 }
 
@@ -193,9 +225,33 @@ struct ShipSimulationScene : public IScene {
 
                     break;
                 }
-                case BlockType::Hull:
-                case BlockType::Radar:
+                case BlockType::Radar: {
+                    always_assert(ship_id != 0 && ship != nullptr, "hub must be placed first");
+                    block_id = m_world.spawn(block, ShipId{.id = ship_id},
+                                             ShipRadar{
+                                                 .dish_handle = ship_radar_dish_texture,
+                                                 .rotation = 0,
+                                                 .rotation_speed = 8.0f * api.time.delta_time,
+                                             },
+                                             Sprite{
+                                                 .handle = ship_radar_base_texture,
+                                             });
+                    break;
+                }
                 case BlockType::Gun: {
+                    always_assert(ship_id != 0 && ship != nullptr, "hub must be placed first");
+                    block_id = m_world.spawn(block, ShipId{.id = ship_id},
+                                             ShipGun{
+                                                 .gun_handle = ship_gun_gun_texture,
+                                                 .rotation = 0,
+                                                 .rotation_speed = 3.0f * api.time.delta_time,
+                                             },
+                                             Sprite{
+                                                 .handle = ship_gun_base_texture,
+                                             });
+                    break;
+                }
+                case BlockType::Hull: {
                     always_assert(ship_id != 0 && ship != nullptr, "hub must be placed first");
                     block_id = m_world.spawn(block, ShipId{.id = ship_id},
                                              Sprite{
@@ -207,6 +263,8 @@ struct ShipSimulationScene : public IScene {
 
                 ship->parts.push_back(block);
 
+                cpShapeSetFilter(shape, cpShapeFilterNew(ship_id, 0xFFFFFFFF, 0xFFFFFFFF));
+
                 debug_assert(block_id != 0, "block_id must be set");
                 return block_id;
             });
@@ -215,20 +273,92 @@ struct ShipSimulationScene : public IScene {
             m_lua.set_function("place", []() {});
         };
 
-        api.on_file_dropped("/Users/thekatze/Development/me-when-lua/assets/scripting/script.lua",
-                            64.0f, 64.0f);
+        // api.on_file_dropped("/Users/thekatze/Development/me-when-lua/assets/scripting/script.lua",
+        //                     64.0f, 64.0f);
     }
 
     void update(EngineApi &api) override {
         m_world.query<RigidBody &, ShipBrain &>([this](EntityId ship_id, RigidBody &body,
                                                        ShipBrain &_) {
             auto &ship = m_ships[ship_id];
-            m_lua.set_function("set_thruster", [this, &ship_id](usize thruster_id, f32 percentage) {
+
+            m_lua.set_function("ship_angle", [body]() { return body.rotation(); });
+            m_lua.set_function("ship_position", [body]() {
+                auto pos = body.position();
+                return std::tuple(pos.x, pos.y);
+            });
+
+            m_lua.set_function("ship_velocity", [body]() {
+                auto vel = body.velocity();
+                return std::tuple(vel.x, vel.y);
+            });
+
+            m_lua.set_function("radar_angle", [this, &ship_id](usize radar_id) {
+                auto components = m_world.get<const ShipId &, const ShipRadar &>(radar_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid radar id\n";
+                    return 0.0f;
+                }
+
+                return std::get<const ShipRadar &>(*components).rotation;
+            });
+
+            m_lua.set_function("gun_angle", [this, &ship_id](usize gun_id) {
+                auto components = m_world.get<const ShipId &, const ShipGun &>(gun_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid gun id\n";
+                    return 0.0f;
+                }
+
+                return std::get<const ShipGun &>(*components).rotation;
+            });
+
+            m_lua.set_function("radar_rotate", [this, &ship_id](usize radar_id, f32 percentage) {
+                auto components = m_world.get<const ShipId &, ShipRadar &>(radar_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid radar id\n";
+                    return;
+                }
+
+                percentage = std::clamp(percentage, -100.0f, 100.0f);
+
+                auto &radar = std::get<ShipRadar &>(*components);
+                if (radar.rotated) {
+                    std::cerr << "already issued a rotation call this frame\n";
+                    return;
+                }
+
+                radar.rotation = radar.rotation + radar.rotation_speed * percentage / 100.0f;
+
+                radar.rotated = true;
+            });
+
+            m_lua.set_function("gun_rotate", [this, &ship_id](usize gun_id, f32 percentage) {
+                auto components = m_world.get<const ShipId &, ShipGun &>(gun_id);
+                if (!components || std::get<const ShipId &>(*components).id != ship_id) {
+                    std::cerr << "invalid gun id\n";
+                    return;
+                }
+
+                percentage = std::clamp(percentage, -100.0f, 100.0f);
+
+                auto &gun = std::get<ShipGun &>(*components);
+                if (gun.rotated) {
+                    std::cerr << "already issued a rotation call this frame\n";
+                    return;
+                }
+
+                gun.rotation = gun.rotation + gun.rotation_speed * percentage / 100.0f;
+
+                gun.rotated = true;
+            });
+
+            m_lua.set_function("thruster_set", [this, &ship_id](usize thruster_id, f32 percentage) {
                 auto components =
                     m_world.get<const ShipId &, const RigidBody &, const ShipThruster &>(
                         thruster_id);
                 if (!components || std::get<const ShipId &>(*components).id != ship_id) {
-                    std::cerr << "invalid thruster id";
+                    std::cerr << "invalid thruster id\n";
                     return;
                 }
 
@@ -241,8 +371,15 @@ struct ShipSimulationScene : public IScene {
                                              cpvmult(dir, thrust * thruster.max_thrust), cpvzero);
             });
 
-            ship.update();
+            sol::protected_function_result update_result = ship.update();
+            if (!update_result.valid()) {
+                sol::error error = update_result;
+                std::cerr << "[" << ship.name << "]: Error: " << error.what() << std::endl;
+            }
         });
+
+        m_world.query<ShipRadar &>([](EntityId &id, ShipRadar &radar) { radar.rotated = false; });
+        m_world.query<ShipGun &>([](EntityId &id, ShipGun &gun) { gun.rotated = false; });
 
         cpSpaceStep(m_space, api.time.delta_time);
     }
@@ -264,8 +401,54 @@ struct ShipSimulationScene : public IScene {
 
                 SDL_FPoint center{.x = w / 2, .y = h / 2};
 
-                SDL_RenderTextureRotated(api.renderer, texture, NULL, &dest, body.rotation(),
-                                         &center, SDL_FLIP_NONE);
+                SDL_RenderTextureRotated(api.renderer, texture, NULL, &dest,
+                                         body.rotation() * RAD2DEG, &center, SDL_FLIP_NONE);
+            });
+
+        m_world.query<const RigidBody &, const ShipRadar &>(
+            [&api](EntityId id, const RigidBody &body, const ShipRadar &radar) {
+                auto texture = api.assets.textures.get(radar.dish_handle);
+                auto pos = body.position();
+
+                f32 w, h;
+                SDL_GetTextureSize(texture, &w, &h);
+
+                auto total_rotation = body.rotation() + radar.rotation;
+
+                SDL_FRect dest{
+                    .x = static_cast<f32>(pos.x) - w / 2.0f,
+                    .y = static_cast<f32>(pos.y) - h / 2.0f,
+                    .w = w,
+                    .h = h,
+                };
+
+                SDL_FPoint center{.x = w / 2, .y = h / 2};
+
+                SDL_RenderTextureRotated(api.renderer, texture, NULL, &dest,
+                                         total_rotation * RAD2DEG, &center, SDL_FLIP_NONE);
+            });
+
+        m_world.query<const RigidBody &, const ShipGun &>(
+            [&api](EntityId id, const RigidBody &body, const ShipGun &gun) {
+                auto texture = api.assets.textures.get(gun.gun_handle);
+                auto pos = body.position();
+
+                f32 w, h;
+                SDL_GetTextureSize(texture, &w, &h);
+
+                auto total_rotation = body.rotation() + gun.rotation;
+
+                SDL_FRect dest{
+                    .x = static_cast<f32>(pos.x) - w / 2.0f,
+                    .y = static_cast<f32>(pos.y) - h / 2.0f,
+                    .w = w,
+                    .h = h,
+                };
+
+                SDL_FPoint center{.x = w / 2, .y = h / 2};
+
+                SDL_RenderTextureRotated(api.renderer, texture, NULL, &dest,
+                                         total_rotation * RAD2DEG, &center, SDL_FLIP_NONE);
             });
     }
 };
