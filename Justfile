@@ -4,7 +4,7 @@ setup:
     cmake --preset=default
 
 build:
-    cmake --build build/ --target me-when-lua
+    cmake --build build/ --target navis-lua
 
 [windows]
 clean:
@@ -16,7 +16,7 @@ clean:
 
 run: build
     open ./assets/scripting/
-    ./build/me-when-lua
+    ./build/navis-lua
 
 release: clean
     cmake --preset=default -DCMAKE_BUILD_TYPE=Release
