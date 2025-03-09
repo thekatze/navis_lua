@@ -106,7 +106,7 @@ struct ShipSimulationScene : public IScene {
     f32 camera_x, camera_y;
 
     void on_enter(EngineApi &api) override {
-        m_lua.open_libraries(sol::lib::base, sol::lib::math);
+        m_lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::table);
         m_lua["BLOCK_HUB"] = BlockType::Hub;
         m_lua["BLOCK_HULL"] = BlockType::Hull;
         m_lua["BLOCK_THRUSTER"] = BlockType::Thruster;
@@ -137,6 +137,9 @@ struct ShipSimulationScene : public IScene {
                                ship_radar_base_texture, ship_radar_dish_texture,
                                ship_thruster_texture, ship_gun_base_texture,
                                ship_gun_gun_texture](const char *file_path, f32 cx, f32 cy) {
+            cx += camera_x;
+            cy += camera_y;
+
             auto script =
                 m_lua.script_file(file_path, [](lua_State *, sol::protected_function_result pfr) {
                     std::cerr << "Invalid lua file dropped" << std::endl;
@@ -320,6 +323,7 @@ struct ShipSimulationScene : public IScene {
                                                                   ShipBrain &_) {
             auto &ship = m_ships[ship_id];
 
+            m_lua.set_function("time", [&api]() { return api.time.elapsed; });
             m_lua.set_function("ships_count", [ships_count]() { return ships_count; });
             m_lua.set_function("ship_angle", [body]() { return body.rotation(); });
             m_lua.set_function("ship_position", [body]() {
