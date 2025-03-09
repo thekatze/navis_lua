@@ -41,6 +41,43 @@ struct Game {
                     m_api.on_file_dropped(event.drop.data, event.drop.x, event.drop.y);
                 }
             }
+
+            if (event.type == SDL_EVENT_KEY_DOWN) {
+                switch (event.key.scancode) {
+                case SDL_SCANCODE_A:
+                    m_api.left = true;
+                    break;
+                case SDL_SCANCODE_D:
+                    m_api.right = true;
+                    break;
+                case SDL_SCANCODE_S:
+                    m_api.down = true;
+                    break;
+                case SDL_SCANCODE_W:
+                    m_api.up = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (event.type == SDL_EVENT_KEY_UP) {
+                switch (event.key.scancode) {
+                case SDL_SCANCODE_A:
+                    m_api.left = false;
+                    break;
+                case SDL_SCANCODE_D:
+                    m_api.right = false;
+                    break;
+                case SDL_SCANCODE_S:
+                    m_api.down = false;
+                    break;
+                case SDL_SCANCODE_W:
+                    m_api.up = false;
+                    break;
+                default:
+                    break;
+                }
+            }
         }
     }
 

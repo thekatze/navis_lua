@@ -103,6 +103,8 @@ struct ShipSimulationScene : public IScene {
     std::unordered_map<EntityId, ShipScript> m_ships;
     sol::state m_lua;
 
+    f32 camera_x, camera_y;
+
     void on_enter(EngineApi &api) override {
         m_lua.open_libraries(sol::lib::base, sol::lib::math);
         m_lua["BLOCK_HUB"] = BlockType::Hub;
@@ -110,6 +112,8 @@ struct ShipSimulationScene : public IScene {
         m_lua["BLOCK_THRUSTER"] = BlockType::Thruster;
         m_lua["BLOCK_RADAR"] = BlockType::Radar;
         m_lua["BLOCK_GUN"] = BlockType::Gun;
+
+        camera_x = camera_y = 0.0f;
 
         m_world = World{};
         m_space = cpSpaceNew();
@@ -291,6 +295,22 @@ struct ShipSimulationScene : public IScene {
     }
 
     void update(EngineApi &api) override {
+
+        const f32 CAMERA_SPEED = 20.0f;
+
+        if (api.up) {
+            camera_y -= CAMERA_SPEED;
+        }
+        if (api.down) {
+            camera_y += CAMERA_SPEED;
+        }
+        if (api.left) {
+            camera_x -= CAMERA_SPEED;
+        }
+        if (api.right) {
+            camera_x += CAMERA_SPEED;
+        }
+
         auto ships_count = m_world.query_count<ShipBrain>();
 
         std::vector<std::tuple<EntityId, cpVect, f32>> shots_to_spawn{};
@@ -508,15 +528,15 @@ struct ShipSimulationScene : public IScene {
 
     void render(EngineApi &api) override {
         m_world.query<const RigidBody &, const Sprite &>(
-            [&api](EntityId id, const RigidBody &body, const Sprite &sprite) {
+            [&api, this](EntityId id, const RigidBody &body, const Sprite &sprite) {
                 auto texture = api.assets.textures.get(sprite.handle);
                 auto pos = body.position();
                 f32 w, h;
                 SDL_GetTextureSize(texture, &w, &h);
 
                 SDL_FRect dest{
-                    .x = static_cast<f32>(pos.x) - w / 2.0f,
-                    .y = static_cast<f32>(pos.y) - h / 2.0f,
+                    .x = static_cast<f32>(pos.x - camera_x) - w / 2.0f,
+                    .y = static_cast<f32>(pos.y - camera_y) - h / 2.0f,
                     .w = w,
                     .h = h,
                 };
@@ -528,7 +548,7 @@ struct ShipSimulationScene : public IScene {
             });
 
         m_world.query<const RigidBody &, const ShipRadar &>(
-            [&api](EntityId id, const RigidBody &body, const ShipRadar &radar) {
+            [&api, this](EntityId id, const RigidBody &body, const ShipRadar &radar) {
                 auto texture = api.assets.textures.get(radar.dish_handle);
                 auto pos = body.position();
 
@@ -538,8 +558,8 @@ struct ShipSimulationScene : public IScene {
                 auto total_rotation = body.rotation() + radar.rotation;
 
                 SDL_FRect dest{
-                    .x = static_cast<f32>(pos.x) - w / 2.0f,
-                    .y = static_cast<f32>(pos.y) - h / 2.0f,
+                    .x = static_cast<f32>(pos.x - camera_x) - w / 2.0f,
+                    .y = static_cast<f32>(pos.y - camera_y) - h / 2.0f,
                     .w = w,
                     .h = h,
                 };
@@ -551,7 +571,7 @@ struct ShipSimulationScene : public IScene {
             });
 
         m_world.query<const RigidBody &, const ShipGun &>(
-            [&api](EntityId id, const RigidBody &body, const ShipGun &gun) {
+            [&api, this](EntityId id, const RigidBody &body, const ShipGun &gun) {
                 auto texture = api.assets.textures.get(gun.gun_handle);
                 auto pos = body.position();
 
@@ -561,8 +581,8 @@ struct ShipSimulationScene : public IScene {
                 auto total_rotation = body.rotation() + gun.rotation;
 
                 SDL_FRect dest{
-                    .x = static_cast<f32>(pos.x) - w / 2.0f,
-                    .y = static_cast<f32>(pos.y) - h / 2.0f,
+                    .x = static_cast<f32>(pos.x - camera_x) - w / 2.0f,
+                    .y = static_cast<f32>(pos.y - camera_y) - h / 2.0f,
                     .w = w,
                     .h = h,
                 };

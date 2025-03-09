@@ -33,5 +33,10 @@ struct EngineApi {
 
     std::function<void(const char *file_path, f32 x, f32 y)> on_file_dropped;
 
+    bool up = false;
+    bool down = false;
+    bool left = false;
+    bool right = false;
+
     Time time;
 };
