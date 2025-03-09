@@ -464,7 +464,7 @@ struct ShipSimulationScene : public IScene {
             auto origin = std::get<cpVect>(shot);
             auto angle = std::get<f32>(shot);
 
-            auto mass = 1.0f;
+            auto mass = 100000.0f;
             auto moment = cpMomentForBox(mass, w, h);
 
             RigidBody block{.body = cpSpaceAddBody(m_space, cpBodyNew(mass, moment)),
