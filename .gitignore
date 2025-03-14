@@ -7,3 +7,4 @@ build/
 *.log
 vcpkg_installed/
 CMakeUserPresets.json
+/.vs
