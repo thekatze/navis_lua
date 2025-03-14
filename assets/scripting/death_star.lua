@@ -1,6 +1,7 @@
 local size = 9
 local half_size = math.floor((size - 1) / 2)
 
+local gun_count = (size * size) - 1
 local guns = {}
 
 return {
@@ -18,8 +19,8 @@ return {
     end,
 
     update = function()
-        for _, gun in ipairs(guns) do
-            gun_rotate(gun, 5.0)
+        for i, gun in ipairs(guns) do
+            gun_rotate(gun, (200 / gun_count) * i - 100)
             if (gun_cooled_down(gun)) then
                 gun_shoot(gun)
             end

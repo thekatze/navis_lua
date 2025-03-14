@@ -31,3 +31,4 @@ target_link_libraries(navis-lua PRIVATE
     sol2 
     PkgConfig::LuaJIT)
 
+target_compile_options(navis-lua PRIVATE -O2)
